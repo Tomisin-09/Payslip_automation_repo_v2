@@ -1,0 +1,137 @@
+# ==============================
+# Payslip Automation – Settings
+# ==============================
+
+run:
+
+  # How the pay period is determined
+  # Options:
+  # - auto_previous_month
+  # - auto_current_month
+  # - manual
+  period_mode: "manual"
+
+  # Used only when period_mode = manual
+  manual_period:
+    year: 2026
+    month: 1
+
+  # Optional reference date (YYYY-MM-DD)
+  # Leave empty to use system date
+  reference_date: ""
+
+  # If true, stop entire run on first failure
+  fail_fast: false
+
+  # Keep per-employee XLSX files (recommended)
+  keep_intermediate_xlsx: true
+
+
+# ------------------------------
+# Period formatting
+# ------------------------------
+
+period:
+
+  # Folder / internal identifier
+  id_format: "{year}-{month:02d}"          # e.g. 2026-01
+
+  # Human-readable display (email)
+  display_format: "{month_name} {year}"    # e.g. January 2026
+
+  # Optional payslip date format
+  payslip_date_format: "%d %B %Y"
+
+
+# ------------------------------
+# Input workbook (single file)
+# ------------------------------
+
+workbook:
+
+  # Contains both Data Source and Payslip
+  path: "data/input/Master_NTS_PayslipPDF_v01.xlsx"
+  data_source_sheet: "Data Source"
+  payslip_sheet: "Payslip"
+
+  # Named range that controls the Payslip
+  employee_ref_named_range: "EmployeeRef"
+
+
+# ------------------------------
+# Data Source configuration
+# ------------------------------
+
+data_source:
+  reference_column: "Reference Number"
+  employee_name_column: "Employee Name"
+  email_column: "Email"
+
+  required_non_null_columns:
+    - "Reference Number"
+    - "Employee Name"
+    - "Email"
+
+
+# ------------------------------
+# Output configuration
+# ------------------------------
+
+output:
+  base_dir: "output"
+  structure:
+    xlsx_dir: "xlsx"
+    pdf_dir: "pdf"
+    logs_dir: "logs"
+    summary_dir: "summary"
+
+  # Used for both XLSX and PDF
+  filename_pattern: "{ref}_{name}_{date}"
+
+
+# ------------------------------
+# PDF export (Excel on Windows)
+# ------------------------------
+
+pdf:
+  engine: "excel"
+  sheet_to_export: "Payslip"
+  quality: "standard"        # standard | minimum
+  open_after_publish: false
+
+
+# ------------------------------
+# Email delivery (Outlook)
+# ------------------------------
+
+email:
+  enabled: true
+
+  engine: "outlook"
+  sender:
+  # Leave blank to use default Outlook account
+  mailbox: ""
+
+  message:
+  subject: "Payslip – {period_display}"
+  body: |
+    Dear {name},
+
+    ```
+      Please find attached your payslip for {period_display}.
+
+      If you have any questions, please contact Payroll.
+
+      Kind regards,
+      Payroll Team
+    ```
+
+
+# ------------------------------
+# Logging
+# ------------------------------
+
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_to_console: true
