@@ -201,8 +201,8 @@ def main() -> None:
 
     # Daily log folders + timestamped filenames
     run_dt = datetime.now()
-    run_date_str = run_dt.strftime("%Y-%m-%d")          # daily folder
-    run_ts_str = run_dt.strftime("%Y-%m-%d_%H-%M-%S")   # filename timestamp
+    run_date_str = run_dt.strftime("%Y-%m-%d")  # daily folder
+    run_ts_str = run_dt.strftime("%Y-%m-%d_%H-%M-%S")  # filename timestamp
 
     base_dir = Path(cfg_get(config, "output", "base_dir", default="output"))
     output_root = (repo / base_dir).resolve()
@@ -242,7 +242,12 @@ def main() -> None:
     reference_col = str(cfg_get(config, "data_source", "reference_column", default="Reference Number"))
     name_col = str(cfg_get(config, "data_source", "employee_name_column", default="Employee Name"))
     email_col = str(cfg_get(config, "data_source", "email_column", default="Email"))
-    required_cols = cfg_get(config, "data_source", "required_non_null_columns", default=[reference_col, name_col, email_col])
+    required_cols = cfg_get(
+        config,
+        "data_source",
+        "required_non_null_columns",
+        default=[reference_col, name_col, email_col],
+    )
     required_cols = list(required_cols) if isinstance(required_cols, (list, tuple)) else [reference_col, name_col, email_col]
 
     filename_pattern = str(cfg_get(config, "output", "filename_pattern", default="{ref}_{name}_{date}"))
@@ -268,8 +273,20 @@ def main() -> None:
     if not employees:
         raise SystemExit("No employees found after filtering required columns.")
 
+    # -----------------------------
+    # Optional capabilities
+    # -----------------------------
     excel_exporter = None
     outlook_sender = None
+
+    # PDF export options (mapped to ExcelPdfExporter.export signature)
+    pdf_sheet_name = cfg_get(config, "pdf", "sheet_name", default=None)
+    pdf_quality = str(cfg_get(config, "pdf", "quality", default="standard")).strip().lower()
+    pdf_open_after = cfg_bool(config, "pdf", "open_after_publish", default=False)
+    pdf_ignore_print_areas = cfg_bool(config, "pdf", "ignore_print_areas", default=False)
+
+    # Optional email config
+    sender_mailbox = cfg_get(config, "email", "sender_mailbox", default=None)
 
     if pdf_enabled:
         from src.pdf.excel_pdf_exporter import ExcelPdfExporter
@@ -280,10 +297,30 @@ def main() -> None:
         send_mode = str(cfg_get(config, "email", "send_mode", default="send"))
         outlook_sender = OutlookEmailSender(send_mode=send_mode)
 
-    subject_tmpl = str(cfg_get(config, "email", "message", "subject", default="Payslip – {period_display}"))
-    body_tmpl = str(cfg_get(config, "email", "message", "body", default="Dear {name},\n\nPlease find attached your payslip for {period_display}.\n"))
+    subject_tmpl = str(
+        cfg_get(
+            config,
+            "email",
+            "message",
+            "subject",
+            default="Payslip – {period_display}",
+        )
+    )
+    body_tmpl = str(
+        cfg_get(
+            config,
+            "email",
+            "message",
+            "body",
+            default="Dear {name},\n\nPlease find attached your payslip for {period_display}.\n",
+        )
+    )
 
     processed = 0
+
+    # -----------------------------
+    # Main processing loop
+    # -----------------------------
     for emp in employees:
         emp_ref = (emp.get("ref") or "").strip()
         emp_name = (emp.get("name") or "").strip()
@@ -307,13 +344,19 @@ def main() -> None:
             employee_ref_named_range=employee_ref_named_range,
         )
 
+        # PDF export (Windows + Excel)
         if pdf_enabled and excel_exporter is not None:
-            excel_exporter.export_to_pdf(
-                xlsx_path=str(xlsx_path),
-                pdf_path=str(pdf_path),
-                config=config,
-            )
+            with excel_exporter as exporter:
+                exporter.export(
+                    workbook_path=str(xlsx_path),
+                    output_pdf_path=str(pdf_path),
+                    sheet_name=pdf_sheet_name,
+                    quality=pdf_quality,
+                    open_after_publish=pdf_open_after,
+                    ignore_print_areas=pdf_ignore_print_areas,
+                )
 
+        # Email sending (Outlook)
         if email_enabled and outlook_sender is not None:
             if not emp_email:
                 logger.warning("No email for ref=%s; skipping email.", emp_ref)
@@ -334,12 +377,15 @@ def main() -> None:
                 )
 
                 attachment = str(pdf_path) if pdf_enabled else str(xlsx_path)
-                outlook_sender.send(
-                    to=emp_email,
-                    subject=subject,
-                    body=body,
-                    attachments=[attachment],
-                )
+
+                with outlook_sender as sender:
+                    sender.send_email(
+                        to_address=emp_email,
+                        subject=subject,
+                        body=body,
+                        attachment_path=attachment,
+                        sender_mailbox=sender_mailbox,
+                    )
 
         processed += 1
 

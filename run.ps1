@@ -1,77 +1,51 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-Write-Host "=== Payslip Automation Runner ==="
-
-# ----------------------------------------
-# 1. Detect Python (python or py)
-# ----------------------------------------
-$PY = $null
-
-if (Get-Command python -ErrorAction SilentlyContinue) {
-    $PY = "python"
-}
-elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    $PY = "py"
+# ==============================
+# 1) Find Python (prefer py, fallback to python)
+# ==============================
+function Get-PythonCommand {
+    if (Get-Command py -ErrorAction SilentlyContinue) { return "py" }
+    if (Get-Command python -ErrorAction SilentlyContinue) { return "python" }
+    return $null
 }
 
-if (-not $PY) {
-    Write-Error @"
-Python is not installed or not on PATH.
-
-Please install Python 3.10 or newer from:
-https://www.python.org/downloads/windows/
-
-IMPORTANT:
-- Tick 'Add Python to PATH'
-- Restart PowerShell after installation
-"@
+$PyCmd = Get-PythonCommand
+if (-not $PyCmd) {
+    Write-Error "Python 3.10+ is required but was not found. Install from https://www.python.org (tick: Add to PATH)."
     exit 1
 }
 
-# ----------------------------------------
-# 2. Enforce minimum Python version
-# ----------------------------------------
-$version = & $PY - << 'EOF'
-import sys
-print(f"{sys.version_info.major}.{sys.version_info.minor}")
-EOF
+# ==============================
+# 2) Enforce minimum Python version
+# ==============================
+$minVersion = [Version]"3.10"
 
-if ([version]$version -lt [version]"3.10") {
-    Write-Error "Python 3.10+ required. Found $version."
+try {
+    $versionString = & $PyCmd -c "import sys; print(sys.version.split()[0])"
+    $currentVersion = [Version]$versionString
+} catch {
+    Write-Error "Python was found ('$PyCmd') but version could not be detected. Try running: $PyCmd --version"
     exit 1
 }
 
-& $PY --version
-Write-Host "Using Python via '$PY'"
+if ($currentVersion -lt $minVersion) {
+    Write-Error "Python $($minVersion)+ is required. Found $currentVersion"
+    exit 1
+}
 
-# ----------------------------------------
-# 3. Create virtual environment
-# ----------------------------------------
+Write-Host "Python version OK: $currentVersion (via $PyCmd)"
+
+# ==============================
+# 3) venv + deps + run
+# ==============================
 if (!(Test-Path ".venv")) {
-    Write-Host "Creating virtual environment..."
-    & $PY -m venv .venv
+    & $PyCmd -m venv .venv
 }
 
-# ----------------------------------------
-# 4. Activate virtual environment
-# ----------------------------------------
-Write-Host "Activating virtual environment..."
 & .\.venv\Scripts\Activate.ps1
 
-# ----------------------------------------
-# 5. Install dependencies
-# ----------------------------------------
-Write-Host "Upgrading pip..."
 python -m pip install --upgrade pip
-
-Write-Host "Installing requirements..."
 python -m pip install -r requirements.txt
 
-# ----------------------------------------
-# 6. Run application
-# ----------------------------------------
-Write-Host "Running application..."
 python -m src.main
-
-Write-Host "=== Run complete ==="
